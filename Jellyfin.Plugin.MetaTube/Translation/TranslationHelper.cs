@@ -87,6 +87,44 @@ public static class TranslationHelper
 
         if (Configuration.TranslationMode.HasFlag(TranslationMode.Summary) && !string.IsNullOrWhiteSpace(m.Summary))
             m.Summary = await TranslateAsync(m.Summary, AutoLanguageCode, to, cancellationToken);
+
+        // custom translations
+        if (!string.IsNullOrWhiteSpace(m.Director))
+            m.Director = await TranslateAsync(m.Director, AutoLanguageCode, to, cancellationToken);
+
+        if (m.Genres != null && m.Genres.Length > 0)
+        {
+            for (int i = 0; i < m.Genres.Length; i++)
+            {
+                m.Genres[i] = await TranslateAsync(m.Genres[i], AutoLanguageCode, to, cancellationToken);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(m.Maker))
+            m.Maker = await TranslateAsync(m.Maker, AutoLanguageCode, to, cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(m.Label))
+            m.Label = await TranslateAsync(m.Label, AutoLanguageCode, to, cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(m.Series))
+            m.Series = await TranslateAsync(m.Series, AutoLanguageCode, to, cancellationToken);
+
+        // if (m.Actors != null && m.Actors.Length > 0)
+        // {
+        //     for (int i = 0; i < m.Actors.Length; i++)
+        //     {
+        //         m.Actors[i] = await TranslateAsync(m.Actors[i], AutoLanguageCode, to, cancellationToken);
+        //     }
+        // }
+
+    }
+
+    public static async Task TranslateAsync(ActorName actorName, string to, CancellationToken cancellationToken)
+    {
+        if (string.Equals(to, JapaneseLanguageCode, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException($"language not allowed: {to}");
+        if (!string.IsNullOrWhiteSpace(actorName.Name))
+            actorName.Name = await TranslateAsync(actorName.Name, AutoLanguageCode, to, cancellationToken);
     }
 
     private static async Task<T> RetryAsync<T>(Func<Task<T>> func, int retryCount)

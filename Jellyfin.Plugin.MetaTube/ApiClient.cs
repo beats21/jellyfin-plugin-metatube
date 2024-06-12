@@ -163,6 +163,36 @@ public static class ApiClient
         return await GetDataAsync<MovieInfo>(apiUrl, true, cancellationToken);
     }
 
+    public static async Task<MovieInfoMod> GetLocalMovieInfoAsync(string title, string provider, string id,
+        CancellationToken cancellationToken)
+    {
+        
+        var apiUrl = $"http://localhost:8085/movie/provider/{provider}/{id}/{title}";
+        // return await GetDataAsync<MovieInfoMod>(apiUrl, false, cancellationToken);
+        
+
+        var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+
+        var response = await HttpClient2.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        // Nullable forgiving reason:
+        // Response is unlikely to be null.
+        // If it happens to be null, an exception is planed to be thrown either way.
+        var apiResponse = (await response.Content!
+            .ReadFromJsonAsync<ResponseInfo<MovieInfoMod>>(cancellationToken: cancellationToken).ConfigureAwait(true))!;
+
+        // EnsureSuccessStatusCode ignoring reason:
+        // When the status is unsuccessful, the API response contains error details.
+        if (!response.IsSuccessStatusCode && apiResponse.Error != null)
+            throw new Exception($"API request error: {apiResponse.Error.Code} ({apiResponse.Error.Message})");
+
+        // Note: data field must not be null if there are no errors.
+        if (apiResponse.Data == null)
+            throw new Exception("Response data field is null");
+
+        return apiResponse.Data;
+    }
+
     public static async Task<List<ActorSearchResult>> SearchActorAsync(string q,
         CancellationToken cancellationToken)
     {
@@ -247,11 +277,27 @@ public static class ApiClient
     #region Http
 
     private static readonly HttpClient HttpClient;
+    private static readonly HttpClient HttpClient2;
     private static string DefaultUserAgent => $"{Plugin.Instance.Name}/{Plugin.Instance.Version}";
 
     static ApiClient()
     {
         HttpClient = new HttpClient(new SocketsHttpHandler
+        {
+            // Connect Timeout.
+            ConnectTimeout = TimeSpan.FromSeconds(30),
+
+            // TCP Keep Alive.
+            KeepAlivePingPolicy = HttpKeepAlivePingPolicy.Always,
+            KeepAlivePingDelay = TimeSpan.FromSeconds(30),
+            KeepAlivePingTimeout = TimeSpan.FromSeconds(30),
+
+            // Connection Pooling.
+            PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+            PooledConnectionIdleTimeout = TimeSpan.FromSeconds(90)
+        });
+
+        HttpClient2 = new HttpClient(new SocketsHttpHandler
         {
             // Connect Timeout.
             ConnectTimeout = TimeSpan.FromSeconds(30),

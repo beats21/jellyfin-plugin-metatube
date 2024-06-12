@@ -39,79 +39,73 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         CancellationToken cancellationToken)
     {
         var pid = info.GetPid(Name);
+        
         if (string.IsNullOrWhiteSpace(pid.Id) || string.IsNullOrWhiteSpace(pid.Provider))
         {
             // Search movies and pick the first result.
             var firstResult = (await GetSearchResults(info, cancellationToken)).FirstOrDefault();
             if (firstResult != null) pid = firstResult.GetPid(Name);
+            // m = await ApiClient.GetMovieInfoAsync(pid.Provider, pid.Id, cancellationToken);
         }
 
-        Logger.Info("Get movie info: {0}", pid.ToString());
+        var m = await ApiClient.GetLocalMovieInfoAsync(info.Name, pid.Provider, pid.Id, cancellationToken);
 
-        var m = await ApiClient.GetMovieInfoAsync(pid.Provider, pid.Id, cancellationToken);
+        
 
         // Preserve original title.
-        var originalTitle = m.Title;
+        // var originalTitle = m.Title;
 
-        // Convert to real actor names.
-        if (Configuration.EnableRealActorNames)
-            await ConvertToRealActorNames(m, cancellationToken);
+        // // Convert to real actor names.
+        // if (Configuration.EnableRealActorNames)
+        //     await ConvertToRealActorNames(m, cancellationToken);
 
-        // Substitute title.
-        if (Configuration.EnableTitleSubstitution)
-            m.Title = Configuration.GetTitleSubstitutionTable().Substitute(m.Title);
+        // // Substitute title.
+        // if (Configuration.EnableTitleSubstitution)
+        //     m.Title = Configuration.GetTitleSubstitutionTable().Substitute(m.Title);
 
-        // Substitute actors.
-        if (Configuration.EnableActorSubstitution)
-            m.Actors = Configuration.GetActorSubstitutionTable().Substitute(m.Actors).ToArray();
+        // // Substitute actors.
+        // if (Configuration.EnableActorSubstitution)
+        //     m.Actors = Configuration.GetActorSubstitutionTable().Substitute(m.Actors).ToArray();
 
-        // Substitute genres.
-        if (Configuration.EnableGenreSubstitution)
-            m.Genres = Configuration.GetGenreSubstitutionTable().Substitute(m.Genres).ToArray();
+        // // Substitute genres.
+        // if (Configuration.EnableGenreSubstitution)
+        //     m.Genres = Configuration.GetGenreSubstitutionTable().Substitute(m.Genres).ToArray();
 
-        // Translate movie info.
-        if (Configuration.TranslationMode != TranslationMode.Disabled)
-            await TranslateMovieInfo(m, info.MetadataLanguage, cancellationToken);
+        // // Translate movie info.
+        // if (Configuration.TranslationMode != TranslationMode.Disabled)
+        //     await TranslateMovieInfo(m, info.MetadataLanguage, cancellationToken);
 
-        // Distinct and clean blank list
-        m.Genres = m.Genres?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ?? Array.Empty<string>();
-        m.Actors = m.Actors?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ?? Array.Empty<string>();
-        m.PreviewImages = m.PreviewImages?.Where(
-            x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ?? Array.Empty<string>();
+        // // Distinct and clean blank list
+        // m.Genres = m2.Genres?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ?? Array.Empty<string>();
+        // m.Actors = m.Actors?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ?? Array.Empty<string>();
+        // m.PreviewImages = m.PreviewImages?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ?? Array.Empty<string>();
 
         // Build parameters.
-        var parameters = new Dictionary<string, string>
-        {
-            { @"{provider}", m.Provider },
-            { @"{id}", m.Id },
-            { @"{number}", m.Number },
-            { @"{title}", m.Title },
-            { @"{series}", m.Series },
-            { @"{maker}", m.Maker },
-            { @"{label}", m.Label },
-            { @"{director}", m.Director },
-            { @"{actors}", m.Actors?.Any() == true ? string.Join(' ', m.Actors) : string.Empty },
-            { @"{first_actor}", m.Actors?.FirstOrDefault() },
-            { @"{year}", $"{m.ReleaseDate:yyyy}" },
-            { @"{month}", $"{m.ReleaseDate:MM}" },
-            { @"{date}", $"{m.ReleaseDate:yyyy-MM-dd}" }
-        };
+        // var parameters = new Dictionary<string, string>
+        // {
+        //     { @"{provider}", m.Provider },
+        //     { @"{id}", m.Id },
+        //     { @"{number}", m.Number },
+        //     { @"{title}", m.Title },
+        //     { @"{series}", m.Series },
+        //     { @"{maker}", m.Maker },
+        //     { @"{label}", m.Label },
+        //     { @"{director}", m.Director },
+        //     { @"{actors}", m.Actors?.Any() == true ? string.Join(' ', m.Actors) : string.Empty },
+        //     { @"{first_actor}", m.Actors?.FirstOrDefault() },
+        //     { @"{year}", $"{m.ReleaseDate:yyyy}" },
+        //     { @"{month}", $"{m.ReleaseDate:MM}" },
+        //     { @"{date}", $"{m.ReleaseDate:yyyy-MM-dd}" }
+        // };
 
         var result = new MetadataResult<Movie>
         {
             Item = new Movie
             {
-                Name = RenderTemplate(
-                    Configuration.EnableTemplate
-                        ? Configuration.NameTemplate
-                        : PluginConfiguration.DefaultNameTemplate, parameters),
-                Tagline = RenderTemplate(
-                    Configuration.EnableTemplate
-                        ? Configuration.TaglineTemplate
-                        : PluginConfiguration.DefaultTaglineTemplate, parameters),
-                OriginalTitle = originalTitle,
+                Name = m.Title,
+                // OriginalTitle = originalTitle,
                 Overview = m.Summary,
-                OfficialRating = Rating,
+                OfficialRating = m.Rating,
                 PremiereDate = m.ReleaseDate.GetValidDateTime(),
                 ProductionYear = m.ReleaseDate.GetValidYear(),
                 Genres = m.Genres?.Any() == true ? m.Genres : Array.Empty<string>()
@@ -128,55 +122,63 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             : m.PreviewVideoHlsUrl);
 
         // Set community rating.
-        if (Configuration.EnableRatings)
-            result.Item.CommunityRating = m.Score > 0 ? (float)Math.Round(m.Score * 2, 1) : null;
+        
+        result.Item.CommunityRating = float.Parse(m.Rating) > 0 ? float.Parse(m.Rating) : null;
 
-        // Add collection.
-        if (Configuration.EnableCollections && !string.IsNullOrWhiteSpace(m.Series))
-            result.Item.AddCollection(m.Series);
+        // Add collection. 
+        foreach (var i in m.Genres)
+        {
+            result.Item.AddCollection(i);
+            result.Item.AddTag(i);
+        }
+        for (int i =0; i < m.ActorsDict.Count; i++) 
+        {
+            var item = m.ActorsDict.ElementAt(i);
+            result.Item.AddCollection(item.Value);
+            result.Item.AddTag(item.Value);
+        }
+            
 
         // Add studio.
         if (!string.IsNullOrWhiteSpace(m.Maker))
-            result.Item.AddStudio(m.Maker);
+        {
+            result.Item.AddStudio($"M: {m.Maker}");
+            result.Item.AddTag($"M: {m.Maker}");
+            result.Item.AddCollection($"M: {m.Maker}");
+        }
 
-        // Add tag (series).
-        if (!string.IsNullOrWhiteSpace(m.Series))
-            result.Item.AddTag(m.Series);
-
-        // Add tag (maker).
-        if (!string.IsNullOrWhiteSpace(m.Maker))
-            result.Item.AddTag(m.Maker);
-
-        // Add tag (label).
-        if (!string.IsNullOrWhiteSpace(m.Label))
+        // Add studio.
+        if (!string.IsNullOrWhiteSpace(m.Label)) 
+        {
             result.Item.AddTag(m.Label);
+            result.Item.AddCollection(m.Label);
+        }
 
+        // Add studio.
+        if (!string.IsNullOrWhiteSpace(m.Series)) 
+        {
+            result.Item.AddTag($"S: {m.Maker}");
+            result.Item.AddCollection(m.Series);
+        }
+
+            
         // Add director.
-        if (Configuration.EnableDirectors && !string.IsNullOrWhiteSpace(m.Director))
-            result.AddPerson(new PersonInfo
-            {
-                Name = m.Director,
-#if __EMBY__
-                Type = PersonType.Director
-#else
-                Type = PersonKind.Director
-#endif
-            });
+        result.AddPerson(new PersonInfo
+        {
+            Name = m.Director,
+            Type = PersonType.Director
+        });
 
         // Add actors.
-        foreach (var name in m.Actors ?? Enumerable.Empty<string>())
+        foreach(var item in m.ActorsDict.ToArray()) 
         {
             var actor = new PersonInfo
             {
-                Name = name,
-#if __EMBY__
+                // Name = name,
+                Name = item.Value,
                 Type = PersonType.Actor,
-#else
-                Type = PersonKind.Actor,
-#endif
-            };
-            await SetActorImageUrl(actor, cancellationToken);
-            result.AddPerson(actor);
+                ImageUrl = await GetActorImageUrl(item.Key, cancellationToken)
+            });
         }
 
         return result;
