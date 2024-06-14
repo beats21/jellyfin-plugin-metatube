@@ -166,7 +166,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         result.AddPerson(new PersonInfo
         {
             Name = m.Director,
-            Type = PersonType.Director
+            Type = PersonKind.Director
         });
 
         // Add actors.
@@ -174,11 +174,11 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         {
             var actor = new PersonInfo
             {
-                // Name = name,
                 Name = item.Value,
-                Type = PersonType.Actor,
-                ImageUrl = await GetActorImageUrl(item.Key, cancellationToken)
-            });
+                Type = PersonKind.Actor,
+            };
+            await SetActorImageUrl(actor, item.Key, cancellationToken);
+            result.AddPerson(actor);
         }
 
         return result;
@@ -245,14 +245,14 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         return results;
     }
 
-    private async Task SetActorImageUrl(PersonInfo actor, CancellationToken cancellationToken)
+    private async Task SetActorImageUrl(PersonInfo actor, string actor_name, CancellationToken cancellationToken)
     {
         try
         {
-            var results = await ApiClient.SearchActorAsync(actor.Name, cancellationToken);
+            var results = await ApiClient.SearchActorAsync(actor_name, cancellationToken);
             if (results?.Any() != true)
             {
-                Logger.Warn("Actor not found: {0}", actor.Name);
+                Logger.Warn("Actor not found: {0}: {1}", actor.Name, actor_name);
                 return;
             }
 
