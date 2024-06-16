@@ -167,7 +167,7 @@ public static class ApiClient
         CancellationToken cancellationToken)
     {
         
-        var apiUrl = $"http://localhost:8085/movie/provider/{provider}/{id}/{title}";
+        var apiUrl = $"http://localhost:8085/movie/{title}";
         // return await GetDataAsync<MovieInfoMod>(apiUrl, false, cancellationToken);
         
 
@@ -178,8 +178,15 @@ public static class ApiClient
         // Nullable forgiving reason:
         // Response is unlikely to be null.
         // If it happens to be null, an exception is planed to be thrown either way.
-        var apiResponse = (await response.Content!
-            .ReadFromJsonAsync<ResponseInfo<MovieInfoMod>>(cancellationToken: cancellationToken).ConfigureAwait(true))!;
+        ResponseInfo<MovieInfoMod> apiResponse;
+        try{
+            apiResponse = (await response.Content!
+                .ReadFromJsonAsync<ResponseInfo<MovieInfoMod>>(cancellationToken: cancellationToken).ConfigureAwait(true))!;
+        } catch (Exception e) {
+            throw new Exception($"API response parse error for title: {title} and error {e.Message}");
+        }
+            
+        
 
         // EnsureSuccessStatusCode ignoring reason:
         // When the status is unsuccessful, the API response contains error details.

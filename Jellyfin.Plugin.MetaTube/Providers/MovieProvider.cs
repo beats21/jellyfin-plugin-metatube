@@ -134,40 +134,41 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         for (int i =0; i < m.ActorsDict.Count; i++) 
         {
             var item = m.ActorsDict.ElementAt(i);
-            result.Item.AddCollection(item.Value);
-            result.Item.AddTag(item.Value);
+            // result.Item.AddGenre($"A- {item.Value}");
+            result.Item.AddCollection($"A- {item.Value}");
+            result.Item.AddTag($"A- {item.Value}");
         }
             
 
         // Add studio.
         if (!string.IsNullOrWhiteSpace(m.Maker))
         {
-            result.Item.AddStudio($"M: {m.Maker}");
-            result.Item.AddTag($"M: {m.Maker}");
-            result.Item.AddCollection($"M: {m.Maker}");
+            result.Item.AddStudio($"M- {m.Maker}");
+            result.Item.AddTag($"M- {m.Maker}");
+            result.Item.AddCollection($"M- {m.Maker}");
         }
 
         // Add studio.
         if (!string.IsNullOrWhiteSpace(m.Label)) 
         {
-            result.Item.AddTag(m.Label);
-            result.Item.AddCollection(m.Label);
+            result.Item.AddTag($"L- {m.Label}");
+            result.Item.AddCollection($"L- {m.Label}");
         }
 
         // Add studio.
         if (!string.IsNullOrWhiteSpace(m.Series)) 
         {
-            result.Item.AddTag($"S: {m.Maker}");
-            result.Item.AddCollection(m.Series);
+            result.Item.AddTag($"S- {m.Maker}");
+            result.Item.AddCollection($"S- {m.Maker}");;
         }
 
             
         // Add director.
-        result.AddPerson(new PersonInfo
-        {
-            Name = m.Director,
-            Type = PersonKind.Director
-        });
+        // result.AddPerson(new PersonInfo
+        // {
+        //     Name = m.Director,
+        //     Type = PersonKind.Director
+        // });
 
         // Add actors.
         foreach(var item in m.ActorsDict.ToArray()) 
@@ -262,7 +263,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                 if (firstResult.Images?.Any() == true)
                     actor.ImageUrl = ApiClient.GetPrimaryImageApiUrl(
                         firstResult.Provider, firstResult.Id, firstResult.Images.First(), 0.5, true);
-                actor.SetPid(Name, firstResult.Provider, firstResult.Id);
+                actor.SetPid(actor_name, firstResult.Provider, firstResult.Id);
             }
 
             // Use the GFriends to update the actor profile image.
