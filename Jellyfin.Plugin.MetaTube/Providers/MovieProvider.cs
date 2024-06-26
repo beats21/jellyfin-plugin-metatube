@@ -39,7 +39,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         CancellationToken cancellationToken)
     {
         var pid = info.GetPid(Name);
-        
+
         if (string.IsNullOrWhiteSpace(pid.Id) || string.IsNullOrWhiteSpace(pid.Provider))
         {
             // Search movies and pick the first result.
@@ -50,7 +50,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
 
         var m = await ApiClient.GetLocalMovieInfoAsync(info.Name, pid.Provider, pid.Id, cancellationToken);
 
-        
+
 
         // Preserve original title.
         // var originalTitle = m.Title;
@@ -98,6 +98,15 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         //     { @"{date}", $"{m.ReleaseDate:yyyy-MM-dd}" }
         // };
 
+        var new_genres = m.Genres?.Any() == true ? m.Genres : Array.Empty<string>();
+        for (int i = 0; i < m.ActorsDict.Count; i++)
+        {
+            var item = m.ActorsDict.ElementAt(i);
+            new_genres = new_genres.Append($"A- {item.Value}").ToArray<string>();
+        }
+        new_genres = new_genres.Append($"M- {m.Maker}").ToArray<string>();
+
+
         var result = new MetadataResult<Movie>
         {
             Item = new Movie
@@ -108,7 +117,8 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                 OfficialRating = m.Rating,
                 PremiereDate = m.ReleaseDate.GetValidDateTime(),
                 ProductionYear = m.ReleaseDate.GetValidYear(),
-                Genres = m.Genres?.Any() == true ? m.Genres : Array.Empty<string>()
+                // Genres = m.Genres?.Any() == true ? m.Genres : Array.Empty<string>()
+                Genres = new_genres
             },
             HasMetadata = true
         };
@@ -122,7 +132,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             : m.PreviewVideoHlsUrl);
 
         // Set community rating.
-        
+
         result.Item.CommunityRating = float.Parse(m.Rating) > 0 ? float.Parse(m.Rating) : null;
 
         // Add collection. 
@@ -131,14 +141,14 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             result.Item.AddCollection(i);
             result.Item.AddTag(i);
         }
-        for (int i =0; i < m.ActorsDict.Count; i++) 
+        for (int i = 0; i < m.ActorsDict.Count; i++)
         {
             var item = m.ActorsDict.ElementAt(i);
             // result.Item.AddGenre($"A- {item.Value}");
             result.Item.AddCollection($"A- {item.Value}");
             result.Item.AddTag($"A- {item.Value}");
         }
-            
+
 
         // Add studio.
         if (!string.IsNullOrWhiteSpace(m.Maker))
@@ -149,20 +159,20 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         }
 
         // Add studio.
-        if (!string.IsNullOrWhiteSpace(m.Label)) 
+        if (!string.IsNullOrWhiteSpace(m.Label))
         {
             result.Item.AddTag($"L- {m.Label}");
             result.Item.AddCollection($"L- {m.Label}");
         }
 
         // Add studio.
-        if (!string.IsNullOrWhiteSpace(m.Series)) 
+        if (!string.IsNullOrWhiteSpace(m.Series))
         {
             result.Item.AddTag($"S- {m.Maker}");
-            result.Item.AddCollection($"S- {m.Maker}");;
+            result.Item.AddCollection($"S- {m.Maker}"); ;
         }
 
-            
+
         // Add director.
         // result.AddPerson(new PersonInfo
         // {
@@ -171,7 +181,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         // });
 
         // Add actors.
-        foreach(var item in m.ActorsDict.ToArray()) 
+        foreach (var item in m.ActorsDict.ToArray())
         {
             var actor = new PersonInfo
             {
