@@ -72,7 +72,7 @@ public class ActorProvider : BaseProvider, IRemoteMetadataProvider<Person, Perso
         }
         else
         {
-            // Exact search.
+            // Exact search using Japanese name from ProviderId
             Logger.Info("Search for actor: {0}", pid.ToString());
             searchResults.Add(await ApiClient.GetActorInfoAsync(pid.Provider, pid.Id,
                 pid.Update != true, cancellationToken));

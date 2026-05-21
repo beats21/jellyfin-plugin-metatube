@@ -35,7 +35,17 @@ public class MovieImageProvider : BaseProvider, IRemoteImageProvider, IHasOrder
         if (string.IsNullOrWhiteSpace(pid.Id) || string.IsNullOrWhiteSpace(pid.Provider))
             return Enumerable.Empty<RemoteImageInfo>();
 
-        var m = await ApiClient.GetMovieInfoAsync(pid.Provider, pid.Id, cancellationToken);
+        Metadata.MovieInfo m;
+        try
+        {
+            m = await ApiClient.GetMovieInfoAsync(pid.Provider, pid.Id, cancellationToken);
+        }
+        catch (Exception e)
+        {
+            Logger.LogError(e, "Failed to get movie info for images: {0}", pid.ToString());
+            return Enumerable.Empty<RemoteImageInfo>();
+        }
+
         var images = new List<RemoteImageInfo>
         {
             new()

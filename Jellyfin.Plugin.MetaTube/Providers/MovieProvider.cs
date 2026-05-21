@@ -99,11 +99,6 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         // };
 
         var new_genres = m.Genres?.Any() == true ? m.Genres : Array.Empty<string>();
-        for (int i = 0; i < m.ActorsDict.Count; i++)
-        {
-            var item = m.ActorsDict.ElementAt(i);
-            new_genres = new_genres.Append($"A- {item.Value}").ToArray<string>();
-        }
         new_genres = new_genres.Append($"M- {m.Maker}").ToArray<string>();
 
 
@@ -143,14 +138,12 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             result.Item.AddCollection(i);
             result.Item.AddTag(i);
         }
-        for (int i = 0; i < m.ActorsDict.Count; i++)
-        {
-            var item = m.ActorsDict.ElementAt(i);
-            // result.Item.AddGenre($"A- {item.Value}");
-            result.Item.AddCollection($"A- {item.Value}");
-            result.Item.AddTag($"A- {item.Value}");
-        }
 
+        // Add actors to collections.
+        foreach (var item in m.ActorsDict.Values)
+        {
+            result.Item.AddCollection($"A- {item}");
+        }
 
         // Add studio.
         if (!string.IsNullOrWhiteSpace(m.Maker))
@@ -170,29 +163,42 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         // Add studio.
         if (!string.IsNullOrWhiteSpace(m.Series))
         {
-            result.Item.AddTag($"S- {m.Maker}");
-            result.Item.AddCollection($"S- {m.Maker}"); ;
+            result.Item.AddTag($"S- {m.Series}");
+            result.Item.AddCollection($"S- {m.Series}"); ;
         }
 
 
         // Add director.
-        // result.AddPerson(new PersonInfo
-        // {
-        //     Name = m.Director,
-        //     Type = PersonKind.Director
-        // });
+        if (!string.IsNullOrWhiteSpace(m.Director))
+        {
+            result.AddPerson(new PersonInfo
+            {
+                Name = m.Director,
+                Type = PersonKind.Director
+            });
+        }
 
         // Add actors.
+        var actorTasks = new List<Task>();
         foreach (var item in m.ActorsDict.ToArray())
         {
             var actor = new PersonInfo
             {
-                Name = item.Value,
+                Name = item.Value, // English name for display
                 Type = PersonKind.Actor,
             };
-            await SetActorImageUrl(actor, item.Key, cancellationToken);
+            // Store Japanese name in ProviderId for API search
+            actor.SetPid(Name, item.Key, item.Key);
+            
+            // Create task for image fetching
+            var actorTask = SetActorImageUrl(actor, item.Key, cancellationToken);
+            actorTasks.Add(actorTask);
+            
             result.AddPerson(actor);
         }
+        
+        // Wait for all actor image tasks to complete
+        await Task.WhenAll(actorTasks);
 
         return result;
     }
