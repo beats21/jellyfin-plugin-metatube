@@ -14,7 +14,7 @@ namespace Jellyfin.Plugin.MetaTube.Configuration;
 #if __EMBY__
 public class PluginConfiguration : EditableOptionsBase
 {
-    public override string EditorTitle => Plugin.Instance.Name;
+    public override string EditorTitle => Plugin.ProviderName;
 #else
 public class PluginConfiguration : BasePluginConfiguration
 {
@@ -32,6 +32,12 @@ public class PluginConfiguration : BasePluginConfiguration
     [Description("Access token for the MetaTube Server, or blank if no token is set by the backend.")]
 #endif
     public string Token { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("Enable auto update")]
+    [Description("Automatically update the plugin through scheduled tasks.")]
+    public bool EnableAutoUpdate { get; set; } = true;
+#endif
 
 #if __EMBY__
     [DisplayName("Enable collections")]
@@ -163,16 +169,44 @@ public class PluginConfiguration : BasePluginConfiguration
     public string GoogleApiKey { get; set; } = string.Empty;
 
 #if __EMBY__
+    [DisplayName("Google api url")]
+    [Description("Custom Google translate api url. (optional)")]
+    [VisibleCondition(nameof(TranslationEngine), ValueCondition.IsEqual, TranslationEngine.Google)]
+#endif
+    public string GoogleApiUrl { get; set; } = string.Empty;
+
+#if __EMBY__
     [DisplayName("DeepL api key")]
     [VisibleCondition(nameof(TranslationEngine), ValueCondition.IsEqual, TranslationEngine.DeepL)]
 #endif
     public string DeepLApiKey { get; set; } = string.Empty;
 
 #if __EMBY__
+    [DisplayName("DeepL api url")]
+    [Description("Custom DeepL-compatible api url. (optional)")]
+    [VisibleCondition(nameof(TranslationEngine), ValueCondition.IsEqual, TranslationEngine.DeepL)]
+#endif
+    public string DeepLApiUrl { get; set; } = string.Empty;
+
+#if __EMBY__
     [DisplayName("OpenAI api key")]
     [VisibleCondition(nameof(TranslationEngine), ValueCondition.IsEqual, TranslationEngine.OpenAi)]
 #endif
     public string OpenAiApiKey { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("OpenAI api url")]
+    [Description("Custom OpenAI-compatible api url. (optional)")]
+    [VisibleCondition(nameof(TranslationEngine), ValueCondition.IsEqual, TranslationEngine.OpenAi)]
+#endif
+    public string OpenAiApiUrl { get; set; } = string.Empty;
+
+#if __EMBY__
+    [DisplayName("OpenAI model")]
+    [Description("Custom OpenAI-compatible api model. (optional)")]
+    [VisibleCondition(nameof(TranslationEngine), ValueCondition.IsEqual, TranslationEngine.OpenAi)]
+#endif
+    public string OpenAiModel { get; set; } = string.Empty;
 
 #if __EMBY__
     [DisplayName("Enable title substitution")]

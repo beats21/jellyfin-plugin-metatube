@@ -1,16 +1,19 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using Jellyfin.Plugin.MetaTube.Configuration;
 using Jellyfin.Plugin.MetaTube.Extensions;
+using Jellyfin.Plugin.MetaTube.Helpers;
 using Jellyfin.Plugin.MetaTube.Metadata;
 using Jellyfin.Plugin.MetaTube.Translation;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Providers;
-using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Providers;
 using MovieInfo = MediaBrowser.Controller.Providers.MovieInfo;
 #if __EMBY__
 using MediaBrowser.Model.Logging;
+using MediaBrowser.Model.Configuration;
+using MediaBrowser.Model.Entities;
 
 #else
 using Jellyfin.Data.Enums;
@@ -19,7 +22,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.MetaTube.Providers;
 
+#if __EMBY__
+public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieInfo>, IHasOrder, IHasMetadataFeatures
+#else
 public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieInfo>, IHasOrder
+#endif
 {
     private const string AvBase = "AVBASE";
     private const string Gfriends = "Gfriends";
@@ -28,6 +35,9 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
     private static readonly string[] AvBaseSupportedProviderNames = { "DUGA", "FANZA", "Getchu", "MGS" };
 
 #if __EMBY__
+    public MetadataFeatures[] Features => new[]
+        { MetadataFeatures.Collections, MetadataFeatures.Adult, MetadataFeatures.RequiredSetup };
+
     public MovieProvider(ILogManager logManager) : base(logManager.CreateLogger<MovieProvider>())
 #else
     public MovieProvider(ILogger<MovieProvider> logger) : base(logger)
@@ -38,14 +48,13 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
     public async Task<MetadataResult<Movie>> GetMetadata(MovieInfo info,
         CancellationToken cancellationToken)
     {
-        var pid = info.GetPid(Name);
+        var pid = info.GetPid(Plugin.ProviderId);
 
         if (string.IsNullOrWhiteSpace(pid.Id) || string.IsNullOrWhiteSpace(pid.Provider))
         {
             // Search movies and pick the first result.
             var firstResult = (await GetSearchResults(info, cancellationToken)).FirstOrDefault();
-            if (firstResult != null) pid = firstResult.GetPid(Name);
-            // m = await ApiClient.GetMovieInfoAsync(pid.Provider, pid.Id, cancellationToken);
+            if (firstResult != null) pid = firstResult.GetPid(Plugin.ProviderId);
         }
 
         var m = await ApiClient.GetLocalMovieInfoAsync(info.Name, pid.Provider, pid.Id, cancellationToken);
@@ -75,10 +84,8 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         // if (Configuration.TranslationMode != TranslationMode.Disabled)
         //     await TranslateMovieInfo(m, info.MetadataLanguage, cancellationToken);
 
-        // // Distinct and clean blank list
-        // m.Genres = m2.Genres?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ?? Array.Empty<string>();
-        // m.Actors = m.Actors?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ?? Array.Empty<string>();
-        // m.PreviewImages = m.PreviewImages?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ?? Array.Empty<string>();
+        // Distinct and clean blank list (genres only; actors handled via ActorsDict)
+        m.Genres = m.Genres?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ?? Array.Empty<string>();
 
         // Build parameters.
         // var parameters = new Dictionary<string, string>
@@ -129,10 +136,10 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             result.Item.SetTrailerUrl(trailerUrl);
 
         // Set community rating.
+        if (float.TryParse(m.Rating, out var ratingVal) && ratingVal > 0)
+            result.Item.CommunityRating = ratingVal;
 
-        result.Item.CommunityRating = float.Parse(m.Rating) > 0 ? float.Parse(m.Rating) : null;
-
-        // Add collection. 
+        // Add collection.
         foreach (var i in m.Genres)
         {
             result.Item.AddCollection(i);
@@ -140,7 +147,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
         }
 
         // Add actors to collections.
-        foreach (var item in m.ActorsDict.Values)
+        foreach (var item in m.ActorsDict?.Values ?? Enumerable.Empty<string>())
         {
             result.Item.AddCollection($"A- {item}");
         }
@@ -180,7 +187,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
 
         // Add actors.
         var actorTasks = new List<Task>();
-        foreach (var item in m.ActorsDict.ToArray())
+        foreach (var item in m.ActorsDict?.ToArray() ?? Array.Empty<KeyValuePair<string, string>>())
         {
             var actor = new PersonInfo
             {
@@ -206,7 +213,7 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
     public async Task<IEnumerable<RemoteSearchResult>> GetSearchResults(MovieInfo info,
         CancellationToken cancellationToken)
     {
-        var pid = info.GetPid(Name);
+        var pid = info.GetPid(Plugin.ProviderId);
 
         var searchResults = new List<MovieSearchResult>();
         if (string.IsNullOrWhiteSpace(pid.Id) || string.IsNullOrWhiteSpace(pid.Provider))
@@ -231,8 +238,8 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
                 // Filter out mismatched results.
                 searchResults.RemoveAll(m => !filter.Contains(m.Provider, StringComparer.OrdinalIgnoreCase));
                 // Reorder results by stable sort.
-                searchResults = searchResults.OrderBy(
-                    m => filter.FindIndex(s => s.Equals(m.Provider, StringComparison.OrdinalIgnoreCase))).ToList();
+                searchResults = searchResults.OrderBy(m =>
+                    filter.FindIndex(s => s.Equals(m.Provider, StringComparison.OrdinalIgnoreCase))).ToList();
             }
             else
             {
@@ -307,21 +314,54 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             if (searchResults?.Any() != true)
             {
                 Logger.Warn("Movie not found on AVBASE: {0}", m.Id);
+                return;
             }
-            else if (searchResults.Count > 1)
+
+            foreach (var result in searchResults)
             {
-                // Ignore multiple results to avoid ambiguity.
-                Logger.Warn("Multiple movies found on AVBASE: {0}", m.Id);
+                var similarity = CalculateTitleSimilarity(m, result);
+
+                Logger.Info("Calculate movie title similarity for {0} ({1}) and {2} ({3}): {4:0.00%}",
+                    m.Id, m.Provider, result.Id, result.Provider, similarity);
+
+                if (similarity >= 0.8)
+                {
+                    if (result.Actors?.Any() == true)
+                        m.Actors = result.Actors;
+                    return;
+                }
             }
-            else
-            {
-                var firstResult = searchResults.First();
-                if (firstResult.Actors?.Any() == true) m.Actors = firstResult.Actors;
-            }
+
+            Logger.Warn("No matching movie found on AVBASE for {0}", m.Id);
         }
         catch (Exception e)
         {
             Logger.Error("Convert to real actor names error: {0} ({1})", m.Number, e.Message);
+        }
+    }
+
+    private static double CalculateTitleSimilarity(MovieSearchResult source, MovieSearchResult target)
+    {
+        var sourceKey = Normalize(source.Number + source.Title);
+        var targetKey = Normalize(target.Number + target.Title);
+
+        if (string.IsNullOrWhiteSpace(sourceKey) || string.IsNullOrWhiteSpace(targetKey))
+            return 0.0;
+
+        var distance = Levenshtein.Distance(sourceKey, targetKey);
+        var avgLength = (sourceKey.Length + targetKey.Length) / 2.0;
+        var similarity = 1.0 - distance / avgLength;
+
+        return Math.Clamp(similarity, 0.0, 1.0);
+
+        string Normalize(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s))
+                return string.Empty;
+
+            s = s.ToLowerInvariant();
+            s = Regex.Replace(s, @"[\s\[\]\(\)【】（）]", "");
+            return s.Trim();
         }
     }
 

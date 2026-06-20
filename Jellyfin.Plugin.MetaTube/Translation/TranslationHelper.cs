@@ -32,7 +32,8 @@ public static class TranslationHelper
                 millisecondsDelay = 100; // Limit Google API request rate to 10 rps.
                 nv.Add(new NameValueCollection
                 {
-                    { "google-api-key", Configuration.GoogleApiKey }
+                    { "google-api-key", Configuration.GoogleApiKey },
+                    { "google-api-url", Configuration.GoogleApiUrl }
                 });
                 break;
             case TranslationEngine.GoogleFree:
@@ -43,14 +44,17 @@ public static class TranslationHelper
                 millisecondsDelay = 100;
                 nv.Add(new NameValueCollection
                 {
-                    { "deepl-api-key", Configuration.DeepLApiKey }
+                    { "deepl-api-key", Configuration.DeepLApiKey },
+                    { "deepl-api-url", Configuration.DeepLApiUrl }
                 });
                 break;
             case TranslationEngine.OpenAi:
                 millisecondsDelay = 1000;
                 nv.Add(new NameValueCollection
                 {
-                    { "openai-api-key", Configuration.OpenAiApiKey }
+                    { "openai-api-key", Configuration.OpenAiApiKey },
+                    { "openai-api-url", Configuration.OpenAiApiUrl },
+                    { "openai-model", Configuration.OpenAiModel }
                 });
                 break;
             default:

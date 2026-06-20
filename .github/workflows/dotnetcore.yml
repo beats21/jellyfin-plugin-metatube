@@ -19,7 +19,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.12'
 
       - name: Generate Version
         id: shell
@@ -33,6 +33,7 @@ jobs:
 
       - name: Generate Manifest
         run: |
+          python3 -m pip install packaging
           python3 scripts/manifest.py Jellyfin.Plugin.MetaTube/bin/Jellyfin.MetaTube@v${{ steps.shell.outputs.version }}.zip
 
       - name: Publish Manifest

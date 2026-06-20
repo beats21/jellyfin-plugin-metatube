@@ -285,7 +285,7 @@ public static class ApiClient
 
     private static readonly HttpClient HttpClient;
     private static readonly HttpClient HttpClient2;
-    private static string DefaultUserAgent => $"{Plugin.Instance.Name}/{Plugin.Instance.Version}";
+    private static string DefaultUserAgent => $"{Plugin.ProviderName}/{Plugin.Instance.Version}";
 
     static ApiClient()
     {
