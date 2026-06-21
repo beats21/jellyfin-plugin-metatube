@@ -166,38 +166,36 @@ public static class ApiClient
     public static async Task<MovieInfoMod> GetLocalMovieInfoAsync(string title, string provider, string id,
         CancellationToken cancellationToken)
     {
-        
-        var apiUrl = $"http://localhost:8085/movie/{title}";
-        // return await GetDataAsync<MovieInfoMod>(apiUrl, false, cancellationToken);
-        
+        // Companion service (j-tools) serves movie metadata at GET /api/movies/{code}
+        // and returns the MovieInfoMod payload directly (no ResponseInfo envelope).
+        var apiUrl = $"http://localhost:8085/api/movies/{Uri.EscapeDataString(title ?? string.Empty)}";
 
         var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
 
         var response = await HttpClient2.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
+        // Surface the real HTTP failure (e.g. 404 not found) instead of a misleading null-data error.
+        if (!response.IsSuccessStatusCode)
+            throw new Exception($"Companion API request failed for '{title}': HTTP {(int)response.StatusCode}");
+
         // Nullable forgiving reason:
         // Response is unlikely to be null.
         // If it happens to be null, an exception is planed to be thrown either way.
-        ResponseInfo<MovieInfoMod> apiResponse;
-        try{
-            apiResponse = (await response.Content!
-                .ReadFromJsonAsync<ResponseInfo<MovieInfoMod>>(cancellationToken: cancellationToken).ConfigureAwait(true))!;
-        } catch (Exception e) {
+        MovieInfoMod data;
+        try
+        {
+            data = (await response.Content!
+                .ReadFromJsonAsync<MovieInfoMod>(cancellationToken: cancellationToken).ConfigureAwait(false))!;
+        }
+        catch (Exception e)
+        {
             throw new Exception($"API response parse error for title: {title} and error {e.Message}");
         }
-            
-        
 
-        // EnsureSuccessStatusCode ignoring reason:
-        // When the status is unsuccessful, the API response contains error details.
-        if (!response.IsSuccessStatusCode && apiResponse.Error != null)
-            throw new Exception($"API request error: {apiResponse.Error.Code} ({apiResponse.Error.Message})");
-
-        // Note: data field must not be null if there are no errors.
-        if (apiResponse.Data == null)
+        if (data == null)
             throw new Exception("Response data field is null");
 
-        return apiResponse.Data;
+        return data;
     }
 
     public static async Task<List<ActorSearchResult>> SearchActorAsync(string q,

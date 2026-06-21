@@ -50,6 +50,13 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
     {
         var pid = info.GetPid(Plugin.ProviderId);
 
+        // The companion is keyed by movie code. Prefer the stored provider id
+        // (set on a prior scrape) and only fall back to the parsed file name on
+        // initial identify — info.Name gets replaced by the full title after the
+        // first successful scrape, which would no longer match a code. Capture it
+        // before the search block below can overwrite pid.
+        var code = !string.IsNullOrWhiteSpace(pid.Id) ? pid.Id : info.Name;
+
         if (string.IsNullOrWhiteSpace(pid.Id) || string.IsNullOrWhiteSpace(pid.Provider))
         {
             // Search movies and pick the first result.
@@ -57,69 +64,77 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             if (firstResult != null) pid = firstResult.GetPid(Plugin.ProviderId);
         }
 
-        var m = await ApiClient.GetLocalMovieInfoAsync(info.Name, pid.Provider, pid.Id, cancellationToken);
+        var m = await ApiClient.GetLocalMovieInfoAsync(code, pid.Provider, pid.Id, cancellationToken);
 
+        // The companion prefixes the title with the code; strip it so the
+        // "{number} {title}" template doesn't render the code twice.
+        if (!string.IsNullOrWhiteSpace(m.Number) && !string.IsNullOrWhiteSpace(m.Title)
+            && m.Title.StartsWith(m.Number, StringComparison.OrdinalIgnoreCase))
+            m.Title = m.Title.Substring(m.Number.Length).TrimStart(' ', '-', ':', '\t');
 
+        // Preserve original title (template rendering replaces Name below).
+        var originalTitle = m.Title;
 
-        // Preserve original title.
-        // var originalTitle = m.Title;
+        // Convert to real actor names — fallback only.
+        // The companion supplies actors via ActorsDict; only reach out to AVBASE when it is empty.
+        if (Configuration.EnableRealActorNames && m.ActorsDict?.Any() != true)
+            await ConvertToRealActorNames(m, cancellationToken);
 
-        // // Convert to real actor names.
-        // if (Configuration.EnableRealActorNames)
-        //     await ConvertToRealActorNames(m, cancellationToken);
-
-        // // Substitute title.
-        // if (Configuration.EnableTitleSubstitution)
-        //     m.Title = Configuration.GetTitleSubstitutionTable().Substitute(m.Title);
-
-        // // Substitute actors.
-        // if (Configuration.EnableActorSubstitution)
-        //     m.Actors = Configuration.GetActorSubstitutionTable().Substitute(m.Actors).ToArray();
-
-        // // Substitute genres.
-        // if (Configuration.EnableGenreSubstitution)
-        //     m.Genres = Configuration.GetGenreSubstitutionTable().Substitute(m.Genres).ToArray();
-
-        // // Translate movie info.
-        // if (Configuration.TranslationMode != TranslationMode.Disabled)
-        //     await TranslateMovieInfo(m, info.MetadataLanguage, cancellationToken);
+        // Translate movie info (title/summary/director/genres/maker/label/series).
+        if (Configuration.TranslationMode != TranslationMode.Disabled)
+            await TranslateMovieInfo(m, info.MetadataLanguage, cancellationToken);
 
         // Distinct and clean blank list (genres only; actors handled via ActorsDict)
         m.Genres = m.Genres?.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray() ?? Array.Empty<string>();
 
-        // Build parameters.
-        // var parameters = new Dictionary<string, string>
-        // {
-        //     { @"{provider}", m.Provider },
-        //     { @"{id}", m.Id },
-        //     { @"{number}", m.Number },
-        //     { @"{title}", m.Title },
-        //     { @"{series}", m.Series },
-        //     { @"{maker}", m.Maker },
-        //     { @"{label}", m.Label },
-        //     { @"{director}", m.Director },
-        //     { @"{actors}", m.Actors?.Any() == true ? string.Join(' ', m.Actors) : string.Empty },
-        //     { @"{first_actor}", m.Actors?.FirstOrDefault() },
-        //     { @"{year}", $"{m.ReleaseDate:yyyy}" },
-        //     { @"{month}", $"{m.ReleaseDate:MM}" },
-        //     { @"{date}", $"{m.ReleaseDate:yyyy-MM-dd}" }
-        // };
+        // Actor source for templates: prefer companion English names, fall back to AVBASE list.
+        var templateActors = m.ActorsDict?.Values.Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
+        if (templateActors == null || templateActors.Length == 0)
+            templateActors = m.Actors?.Where(x => !string.IsNullOrWhiteSpace(x)).ToArray() ?? Array.Empty<string>();
+
+        // Build template parameters.
+        var parameters = new Dictionary<string, string>
+        {
+            { @"{provider}", m.Provider },
+            { @"{id}", m.Id },
+            { @"{number}", m.Number },
+            { @"{title}", m.Title },
+            { @"{series}", m.Series },
+            { @"{maker}", m.Maker },
+            { @"{label}", m.Label },
+            { @"{director}", m.Director },
+            { @"{actors}", templateActors.Any() ? string.Join(' ', templateActors) : string.Empty },
+            { @"{first_actor}", templateActors.FirstOrDefault() ?? string.Empty },
+            { @"{year}", $"{m.ReleaseDate:yyyy}" },
+            { @"{month}", $"{m.ReleaseDate:MM}" },
+            { @"{date}", $"{m.ReleaseDate:yyyy-MM-dd}" }
+        };
+
+        var name = RenderTemplate(
+            Configuration.EnableTemplate ? Configuration.NameTemplate : PluginConfiguration.DefaultNameTemplate,
+            parameters);
+        if (string.IsNullOrWhiteSpace(name)) name = m.Title;
+
+        var tagline = RenderTemplate(
+            Configuration.EnableTemplate ? Configuration.TaglineTemplate : PluginConfiguration.DefaultTaglineTemplate,
+            parameters);
 
         var new_genres = m.Genres?.Any() == true ? m.Genres : Array.Empty<string>();
-        new_genres = new_genres.Append($"M- {m.Maker}").ToArray<string>();
+        if (!string.IsNullOrWhiteSpace(m.Maker))
+            new_genres = new_genres.Append($"M- {m.Maker}").ToArray<string>();
 
 
         var result = new MetadataResult<Movie>
         {
             Item = new Movie
             {
-                Name = m.Title,
-                // OriginalTitle = originalTitle,
+                Name = name,
+                Tagline = tagline,
+                OriginalTitle = originalTitle,
                 Overview = m.Summary,
                 OfficialRating = m.Rating,
                 PremiereDate = m.ReleaseDate.GetValidDateTime(),
                 ProductionYear = m.ReleaseDate.GetValidYear(),
-                // Genres = m.Genres?.Any() == true ? m.Genres : Array.Empty<string>()
                 Genres = new_genres
             },
             HasMetadata = true
@@ -187,23 +202,46 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
 
         // Add actors.
         var actorTasks = new List<Task>();
-        foreach (var item in m.ActorsDict?.ToArray() ?? Array.Empty<KeyValuePair<string, string>>())
+        if (m.ActorsDict?.Any() == true)
         {
-            var actor = new PersonInfo
+            // Companion path: English name for display, Japanese key for image/API search.
+            foreach (var item in m.ActorsDict.ToArray())
             {
-                Name = item.Value, // English name for display
-                Type = PersonKind.Actor,
-            };
-            // Store Japanese name in ProviderId for API search
-            actor.SetPid(Name, item.Key, item.Key);
-            
-            // Create task for image fetching
-            var actorTask = SetActorImageUrl(actor, item.Key, cancellationToken);
-            actorTasks.Add(actorTask);
-            
-            result.AddPerson(actor);
+                var actor = new PersonInfo
+                {
+                    Name = item.Value, // English name for display
+                    Type = PersonKind.Actor,
+                };
+                // Store Japanese name in ProviderId for API search
+                actor.SetPid(Name, item.Key, item.Key);
+
+                // Create task for image fetching
+                var actorTask = SetActorImageUrl(actor, item.Key, cancellationToken);
+                actorTasks.Add(actorTask);
+
+                result.AddPerson(actor);
+            }
         }
-        
+        else
+        {
+            // Fallback path: no ActorsDict (e.g. AVBASE real names); search images by the name itself.
+            foreach (var actorName in m.Actors ?? Enumerable.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(actorName)) continue;
+
+                var actor = new PersonInfo
+                {
+                    Name = actorName,
+                    Type = PersonKind.Actor,
+                };
+
+                var actorTask = SetActorImageUrl(actor, actorName, cancellationToken);
+                actorTasks.Add(actorTask);
+
+                result.AddPerson(actor);
+            }
+        }
+
         // Wait for all actor image tasks to complete
         await Task.WhenAll(actorTasks);
 
@@ -288,7 +326,9 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             {
                 actor.ImageUrl = ApiClient.GetPrimaryImageApiUrl(
                     firstResult.Provider, firstResult.Id, firstResult.Images.First(), 0.5, true);
-                actor.SetPid(actor_name, firstResult.Provider, firstResult.Id);
+                // Store under the plugin's provider key (not the search term) so
+                // ActorProvider re-fetches with a valid provider:id, not the JP name.
+                actor.SetPid(Name, firstResult.Provider, firstResult.Id);
             }
 
             // Use the Gfriends to update the actor profile image, if any.
@@ -296,11 +336,16 @@ public class MovieProvider : BaseProvider, IRemoteMetadataProvider<Movie, MovieI
             {
                 actor.ImageUrl = ApiClient.GetPrimaryImageApiUrl(
                     result.Provider, result.Id, result.Images.First(), 0.5, true);
+                actor.SetPid(Name, result.Provider, result.Id);
             }
         }
         catch (Exception e)
         {
-            Logger.Error("Get actor image error: {0} ({1})", actor.Name, e.Message);
+            // Actor absent from the image source (404) is an expected data gap, not a fault.
+            if (e.Message.Contains("404"))
+                Logger.Warn("Actor image not found: {0} ({1})", actor.Name, actor_name);
+            else
+                Logger.Error("Get actor image error: {0} ({1})", actor.Name, e.Message);
         }
     }
 
