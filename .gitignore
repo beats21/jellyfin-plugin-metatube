@@ -164,6 +164,7 @@ cython_debug/
 # Builds
 bin/
 obj/
+out/
 /packages/
 
 # ReSharper
